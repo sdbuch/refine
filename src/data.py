@@ -3,17 +3,14 @@
 
 """Functions related to data generation.
 
-Module containing functions for loading/creating test image data, either real
-or fake. Probably should load e.g. image data and output it as a matrix/tensor.
+Module containing functions for loading/creating test image data.
 """
 
 # imports
 import numpy as np
 import numpy.linalg as npla
 import scipy as sp
-import scipy.io as sio
 import matplotlib.pyplot as plt
-from scipy import signal
 
 def crab_beach(b, A=np.eye(2)):
     """Create image of the crab on the beach at specified location

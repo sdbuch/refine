@@ -14,9 +14,7 @@ import numpy as np
 import numpy.linalg as npla
 from numpy.random import default_rng
 import scipy as sp
-import scipy.io as sio
 import matplotlib.pyplot as plt
-import time
 import torch
 from torch import tensor
 
@@ -25,8 +23,6 @@ def device():
 
     This snippet can be pasted in various locations in the code where we want
     things to work whether they are on CPU or GPU.
-
-    TODO: Prefer to put this in a top level config location 
 
     """
 
@@ -42,9 +38,6 @@ def device():
 
 def precision():
     """Helper function to get the desired floating point type for computations
-
-    TODO: Prefer to put this definition elsewhere (in a top-level config file
-    somewhere, e.g. in crab.hierarchy or something)
 
     """
 
@@ -175,10 +168,7 @@ def reg_l2_rigid(Y_scene, X, mask, locs, sigma=3, sigma_scene=1.5,
     from images import (imagesc, get_affine_grid_basis, show_false_color)
 
     # OVERHEAD
-    # prefer to move this external, for later interfacing with bfsw detection
-    # tensor allocation, stuff...
     dev = device()
-    # torch.backends.cudnn.benchmark = True
     C, M, N = Y_scene.shape
     c, roi_u, roi_v = X.shape
     batch_sz = locs.shape[0]
@@ -227,18 +217,6 @@ def reg_l2_rigid(Y_scene, X, mask, locs, sigma=3, sigma_scene=1.5,
     m_vec -= pad_sz//2 + (roi_u-1)/2
     n_vec = torch.arange(roi_v + pad_sz, device=dev, dtype=precision())
     n_vec -= pad_sz//2 + (roi_v-1)/2
-    #tau_basis_u = 2/(M-1)*torch.tensordot(m_vec[:,None], torch.ones((1, roi_v +
-    #    pad_sz), device=dev, dtype=precision()), dims=1)[None, ..., None]
-    #tau_basis_v = 2/(N-1)*torch.tensordot(torch.ones((roi_u + pad_sz, 1),
-    #    device=dev, dtype=precision()), n_vec[:,None].T, dims=1)[None,...,
-    #            None]
-    #tau_basis_shift = (torch.flip(locs, (-1,)) +
-    #        torch.tile(torch.tensor(((roi_v-N)/2, (roi_u-M)/2), device=dev,
-    #            dtype=precision())[None, :], (batch_sz, 1)))
-    #dir_scale_tensor = torch.tensor((2/(N-1), 2/(M-1)), device=dev,
-    #        dtype=precision())[None, :]
-    #tau_basis_shift *= dir_scale_tensor
-    #tau_basis_shift = tau_basis_shift[:, None, None, :]
 
     if init_data is None:
         # Default (identity) initialization
@@ -276,12 +254,6 @@ def reg_l2_rigid(Y_scene, X, mask, locs, sigma=3, sigma_scene=1.5,
 
     # Prepare the cost function and smoothing-mode-specific internals
     if image_type == 'textured':
-        #if erode is True:
-        #    pass
-        #    mask_eroded = binary_erosion(mask.to('cpu').numpy()[0,...],
-        #            iterations=1)
-        #    mask_eroded = tensor(mask_eroded[None, ...], device=dev,
-        #            dtype=precision())
         mask_smeared = conv2d(mask[None, ...], G_pt[0,...][None,:],
                 padding=2*G_tail, groups=1)
         term3 = torch.sum(G_pt[0,...]) * torch.sum((X * mask) ** 2)
@@ -290,14 +262,6 @@ def reg_l2_rigid(Y_scene, X, mask, locs, sigma=3, sigma_scene=1.5,
                 - 2 * torch.sum(Y * X_smeared,axis=(-1, -2, -3)) + term3)
         residual_func = lambda Y: mask_smeared * Y - X_smeared
     else:
-        # TODO: Possible mask improvement would be to always have the region of
-        # interest be square, even if the motif is rectangular
-        # This accounts for possible rotations of the motif...
-        # More broadly, Suggests some challenges for scale-changing
-        # transformations... (but this can possibly be engineered away by
-        # specifying maximum tolerable scale changes)
-        #mask = torch.zeros((1, pad_sz + roi_u, pad_sz + roi_v), device=dev,
-        #        dtype=precision())
         mask = torch.zeros((1, pad_sz + roi_u, pad_sz + roi_v), device=dev,
                 dtype=precision())
         mask[0, G_tail:roi_u+3*G_tail+2*G_scene_tail:,
@@ -390,21 +354,6 @@ def reg_l2_rigid(Y_scene, X, mask, locs, sigma=3, sigma_scene=1.5,
     # Compute cost for last loop iteration
     cur_Y = resample_chunked(Y, tau_pt, chunk_sz)
     if image_type == 'textured':
-        #    # Calculate final error with eroded mask
-        #    error[:, max_iter-1] = 0.5 * torch.sum(mask_eroded * (cur_Y[:,
-        #        :,G_tail:-G_tail, G_tail:-G_tail] - X)**2, axis=(-3,-2,-1))
-        #else:
-        #if erode is True:
-        #    # try last error filtering
-        #    pass
-        #    YY = cur_Y[:, :, G_tail:-G_tail, G_tail:-G_tail].detach()
-        #    sigma_final = 1
-        #    G_final_tail = int(np.ceil(3*sigma_final))
-        #    G_final = fftshift(gaussian_filter_2d(2*G_final_tail +1,
-        #        N=2*G_final_tail+1, sigma_u=sigma_final))
-        #    G_final_pt = torch.tile(tensor(G_final[None, ...], device=dev), (C, 1, 1))[:, None, ...]
-        #    res_conv = conv2d(YY-X[None,...], G_final_pt, padding=G_final_tail, groups=C)
-        #    breakpoint()
         error[:, max_iter-1] = cost(cur_Y.detach())
         b_out = b
         phi_out = phi
@@ -437,11 +386,6 @@ def reg_l2_spike(Y_scene, X, locs, ctrs=None, sigma=10, sigma0=2,
         record_process=False, quiet=True):
     """Complementary smoothing registration formulation with inv-affine motion
 
-    TODO: Write description and ins/outs. (ins/outs basically same as
-    reg_l2_rigid?)
-
-    TODO: Can easily extend it to rigid/similarity motion models.
-
     NOTE: The filtering scheme used here doesn't explicitly normalize the
     filters to have unit ell_1 norm -- just uses the definition of the
     continuous pdf + discretizes it. So depending on corners cut for speed (see
@@ -462,7 +406,7 @@ def reg_l2_spike(Y_scene, X, locs, ctrs=None, sigma=10, sigma0=2,
     # torch.backends.cudnn.benchmark = True
     C, M, N = Y_scene.shape
     c, roi_u, roi_v = X.shape
-    # TODO: This is easier to code for odd-size motifs, so just require it (can
+    # This is easier to code for odd-size motifs, so just require it (can
     # always just pad). but it's not necessary (adjoint operator just needs to
     # be implemented differently...)
     if roi_u % 2 == 0:
@@ -554,7 +498,6 @@ def reg_l2_spike(Y_scene, X, locs, ctrs=None, sigma=10, sigma0=2,
         Ainv_b = torch.bmm(Ainv, b[...,None])[..., 0]
     else:
         # passthrough initialization
-        # TODO: Not tested yet
         A = init_data[0]
         b = init_data[1]
         Ainv = torch.linalg.inv(A)
@@ -572,7 +515,6 @@ def reg_l2_spike(Y_scene, X, locs, ctrs=None, sigma=10, sigma0=2,
                 2*G_tail+2*G_scene_tail), device=dev, dtype=precision())
     X_1conv = conv2d(X[None, ...], G_pt, padding=3*G_tail + G_scene_tail,
             groups=C)
-    # X_2conv = conv2d(X_1conv, G_pt, padding=G_tail, groups=C)
 
     # Check for rejections
     # A bit extra on the first iteration for savings...
@@ -612,10 +554,6 @@ def reg_l2_spike(Y_scene, X, locs, ctrs=None, sigma=10, sigma0=2,
         
         Rvals = torch.zeros(max_iter, device=dev, dtype=precision())
         
-    #cur_X = pad(X[None, ...], (2*G_tail,)*4)
-    #breakpoint()
-
-
     # Prepare preconditioner
     # Using motif_rad as a heuristic for the 1->2 norm of matrix of spike locs
     # (plus a scaling by root-num-channels)
@@ -623,12 +561,10 @@ def reg_l2_spike(Y_scene, X, locs, ctrs=None, sigma=10, sigma0=2,
     bb_l, bb_r, bb_t, bb_b = mask_to_bbox_pt(X, thresh=1e-6)
     sz_u = bb_b - bb_t
     sz_v = bb_r - bb_l
-    #motif_rad = np.max((roi_u/2, roi_v/2))
     motif_rad = torch.max(sz_u/2, sz_v/2)
     overall_scale = 8*pi*sigma**4
     A_scale = overall_scale / motif_rad**2
-    #torch.tensor(overall_scale / motif_rad**2, device=dev, dtype=precision())
-    b_scale = overall_scale #torch.tensor(overall_scale, device=dev, dtype=precision())
+    b_scale = overall_scale
 
     # Main loop!
     # Overhead definitions (never change)
@@ -641,10 +577,6 @@ def reg_l2_spike(Y_scene, X, locs, ctrs=None, sigma=10, sigma0=2,
         device=dev, dtype=precision()))[:,None],
         torch.kron(torch.ones(len(n_vec_filt), device=dev, dtype=precision()),
             m_vec_filt)[:,None]), dim=-1)
-    # TODO: Should be able to get rid of an inverse per loop by using
-    # sherman-morrison or something like that for Sigma. Could benchmark a bit
-    # and see how much this bottlenecks (suspicious that padding operations /
-    # convs might be bottlenecking anyways)
     for idx in range(max_iter-1):
         if not quiet:
             print(idx)
@@ -706,9 +638,6 @@ def reg_l2_spike(Y_scene, X, locs, ctrs=None, sigma=10, sigma0=2,
         scale_matrix = torch.einsum('bij,ik->bjk', paint, grid)
         scale_term0 = torch.sum(hadamard, axis=(-1,-2))
         # Get the gradients
-        # TODO: Can inspect these two terms for computational savings possibly
-        # (might be able to multiply in some matrices and get savings, esp if
-        # Signainv is represented with sherman-morrison...)
         conj_scale = (torch.bmm(torch.bmm(Sigmainv, scale_matrix), Sigmainv) -
                 scale_term0[:,None,None] * Sigmainv)
         grad_A_filter = (sigma0**2 *
@@ -756,8 +685,6 @@ def reg_l2_spike(Y_scene, X, locs, ctrs=None, sigma=10, sigma0=2,
         #print(f'directional deriv: {dirderivs_A}')
 
         # Gradient steps
-        # A -= step_A * grad_A_rs * A_scale
-        # b -= step_b * grad_b_rs[...,0] * b_scale
         A -= step_A * grad_A_rs
         b -= step_b * grad_b_rs[...,0]
         # Recalculate stuff
@@ -777,8 +704,6 @@ def reg_l2_spike(Y_scene, X, locs, ctrs=None, sigma=10, sigma0=2,
                                     cv-roi_v//2:cv+roi_v//2+1]
             Rvals[idx] = torch.sum(cur_Y_ctr[0] * X) / \
                     torch.sqrt(torch.sum(cur_Y_ctr[0]**2) * torch.sum(X**2))
-            # Rvals[idx] = torch.sum(cur_Y_ctr[0] * X) / \
-            #         (torch.numel(cur_Y_ctr) * torch.std(cur_Y_ctr[0].flatten()) * torch.std(X.flatten()))
 
     # Cleanup: last-iter operations
     cur_Y = resample_chunked(Y, tau_pt, chunk_sz)
@@ -814,8 +739,6 @@ def reg_l2_spike(Y_scene, X, locs, ctrs=None, sigma=10, sigma0=2,
                                 cv-roi_v//2:cv+roi_v//2+1]
         Rvals[-1] = torch.sum(cur_Y_ctr[0] * X) / \
                     torch.sqrt(torch.sum(cur_Y_ctr[0]**2) * torch.sum(X**2))
-        # Rvals[-1] = torch.sum(cur_Y_ctr[0] * X) / \
-        #             (torch.numel(cur_Y_ctr) * torch.std(cur_Y_ctr[0].flatten()) * torch.std(X.flatten()))
 
     # Done
     if record_process:

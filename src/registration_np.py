@@ -139,7 +139,6 @@ def get_default_pgd_dict(**kwargs):
             complexity penalty, and the solver runs proximal gradient descent
             instead. (see e.g. entry for lambda for more info on associated
             parameters).
-        TODO: Implement homography.
     gamma : float (min 0, max 1)
         Nesterov accelerated GD momentum parameter. 0 corresponds to the
         "usual" Nesterov AGD. 1 corresponds to "vanilla" GD. The optimal value
@@ -287,13 +286,6 @@ def affine_to_vf(A, b, M, N):
             A1[np.newaxis, np.newaxis, :] * ev[..., np.newaxis] + \
             b[np.newaxis, np.newaxis, :] * np.ones((M, N, 1))
 
-    # # For loop way
-    # tau = np.zeros((M, N, 2))
-    # for i in np.arange(M):
-    #     for j in np.arange(N):
-    #         tau[i,j,0] = A[0, 0] * i + A[0, 1] * j + b[0]
-    #         tau[i,j,1] = A[1, 0] * i + A[1, 1] * j + b[1]
-
     return (tau[:,:,0], tau[:,:,1])
 
 def vf_to_affine(tau_u, tau_v, ctr):
@@ -421,7 +413,6 @@ def registration_l2_exp(Y, X, W, Om, center, transform_mode, optim_vars, param_d
     
     # initialize the background
     beta0 = cconv_fourier(h[...,np.newaxis], cur_Y - X) 
-    #beta0 = np.zeros((m,n,c))
     beta = cconv_fourier(h[...,np.newaxis], beta0) 
     
     cur_X = np.zeros((m,n,c))
@@ -435,8 +426,6 @@ def registration_l2_exp(Y, X, W, Om, center, transform_mode, optim_vars, param_d
     n_vec = np.arange(n) - center[1]
 
     if param_dict['use_nesterov'] is False:
-        # print('Optimizing with vanilla PGD.')
-        # for idx in range(1, MAX_ITER):
         for idx in range(MAX_ITER):
             
          
@@ -471,7 +460,7 @@ def registration_l2_exp(Y, X, W, Om, center, transform_mode, optim_vars, param_d
             grad_b[0] = np.sum(tau_u_dot_rowsum)
             grad_b[1] = np.sum(tau_v_dot_rowsum)
 
-            # Precondition
+            # Precondition for crab body motif
             grad_A /= 100
 
             
@@ -503,16 +492,6 @@ def registration_l2_exp(Y, X, W, Om, center, transform_mode, optim_vars, param_d
                 elif transform_mode == 'translation':
                     b     = b - step * grad_b
                     A = np.eye(2)
-                
-
-                # # Constraint on singular values
-                # u,s,vh = npla.svd(A)
-                # for i_sv in range(len(s)):
-                #     if abs(s[i_sv]) < svlim[0]:
-                #         s[i_sv] = np.sign(s[i_sv]) * svlim[0]
-                #     if abs(s[i_sv]) > svlim[1]:
-                #         s[i_sv] = np.sign(s[i_sv]) * svlim[1]
-                # A = u * np.diag(s) * vh
 
             beta0 = beta0 - 25 * step * dphi_dbeta0
 
@@ -524,12 +503,6 @@ def registration_l2_exp(Y, X, W, Om, center, transform_mode, optim_vars, param_d
             cur_Y = image_interpolation_bicubic(Y, tau_u, tau_v ) 
 
             beta = cconv_fourier(h[...,np.newaxis], beta0) 
-            
-            #print('beta!')
-            #plt.imshow(beta)
-            #plt.show()
-            #plt.imshow(dphi_dbeta0)
-            #plt.show()
 
             cur_X = np.zeros((m,n,c))
             cur_X = (1-Om)*beta + Om*X 
@@ -537,9 +510,6 @@ def registration_l2_exp(Y, X, W, Om, center, transform_mode, optim_vars, param_d
             FWres = W * cconv_fourier(g[...,np.newaxis], cur_Y-cur_X) 
 
             error[idx] = .5 * np.sum(FWres ** 2)
-
-            # cur_X_wd = (cur_X - np.mean(cur_X * W, axis=(0,1))) * W
-            # cur_Y_wd = (cur_Y - np.mean(cur_Y * W, axis=(0,1))) * W
 
             cur_X_wd = cur_X * Om
             for ic in range(3):
@@ -573,56 +543,20 @@ def registration_l2_exp(Y, X, W, Om, center, transform_mode, optim_vars, param_d
 
             if (idx % param_dict['epoch_len']) == 0:
                 if param_dict['quiet'] is False:
-                    # print(f'iter {idx}  obj {error[idx]}  A {A} svs {np.linalg.svd(A)} b {b}  grad_A {grad_A}  grad_b {grad_b} grad_beta {npla.norm(dphi_dbeta0.ravel(),2)} ')
                     print('iter {:d}      objective {:.4e}      correlation {:.4f}'.format(idx, error[idx], Rvals[idx]))
             
             if visualize is True:
                 if (idx % 10) == 0:
                     if param_dict['quiet'] is False:
-                        # f, (ax1, ax2) = plt.subplots(1, 2)
-                        
-                        # ax1.imshow(cur_Y_disp) 
-                        # ax2.imshow(cur_X)
-                        # plt.show()
 
                         plt.imshow(cur_Y_disp)
                         plt.show()
 
 
-                    #print(f'phi-grad {grad_phi} \t\t\t b-grad {grad_b}...')
-                    #plt.imshow(cur_Y)
-                    #plt.show()
-                    #plt.imshow(X)
-                    #plt.show()
-                    
-                    #print(beta)
-                    
-                    """
-                    plt.imshow(Y)
-                    
-                    bb_u1 = tau_u[bb_t,bb_l]
-                    bb_v1 = tau_v[bb_t,bb_l]
-                    
-                    bb_u2 = tau_u[bb_t+roi_u-1,bb_l]
-                    bb_v2 = tau_v[bb_t+roi_u-1,bb_l]
-
-                    bb_u3 = tau_u[bb_t+roi_u-1,bb_l+roi_v-1]
-                    bb_v3 = tau_v[bb_t+roi_u-1,bb_l+roi_v-1]
-
-                    bb_u4 = tau_u[bb_t,bb_l+roi_v-1]
-                    bb_v4 = tau_v[bb_t,bb_l+roi_v-1]
-
-                    plt.plot( [ bb_v1_0, bb_v2_0, bb_v3_0, bb_v4_0, bb_v1_0 ], [ bb_u1_0, bb_u2_0, bb_u3_0, bb_u4_0, bb_u1_0 ], color = 'b', linewidth = 1 )
-                    plt.plot( [ bb_v1, bb_v2, bb_v3, bb_v4, bb_v1 ], [ bb_u1, bb_u2, bb_u3, bb_u4, bb_u1 ], color = 'r', linewidth = 3 )
-                    plt.show()"""
-
     # This next block of code is for Nesterov accelerated GD.
     else:
         raise NotImplementedError('Test function only implements vanilla GD')
         
-    # plt.imsave('registration.png',np.maximum(np.minimum(cur_Y_disp,0.999),.0001))
-    # plt.imsave('X_plus_beta.png',np.maximum(np.minimum(cur_X,0.999),.0001))
-
     if transform_mode == 'affine':
         optim_vars_new = [A, b]
     elif transform_mode == 'similarity':
@@ -1379,7 +1313,6 @@ def generate_data(mode, aff_A=None, aff_b=None):
     else:
         crabDef,maskDef,tf_params = apply_random_transform(crab,crab_mask,c,
                                                     mode,s_dist,phi_dist,theta_dist,b_dist)
-    #plt.imshow(crabDef)
 
     X = (1-maskDef) * beach_bg + maskDef * crabDef
 
@@ -1432,14 +1365,12 @@ def test_complexity_textured():
         good_id = np.where(Rvals_optim > target_corr)[0]
         if len(good_id) > 0:
             iter_recs[0,0] += good_id[0] + 1
-            # time_recs[0,0] += (good_id[0]+1) / len(Rvals_optim) * elapsed_optim
         else:
             incomplete[0,0] = 1
             
         good_id = np.where(Rvals_cover > target_corr)[0]
         if len(good_id) > 0:
             iter_recs[1,0] += good_id[0] + 1
-            # time_recs[1,0] += (good_id[0]+1) / len(Rvals_cover) * elapsed_cover
         else:
             incomplete[1,0] = 1
             
@@ -1452,14 +1383,12 @@ def test_complexity_textured():
         good_id = np.where(Rvals_optim > target_corr)[0]
         if len(good_id) > 0:
             iter_recs[0,1] += good_id[0] + 1
-            # time_recs[0,1] += (good_id[0]+1) / len(Rvals_optim) * elapsed_optim
         else:
             incomplete[0,1] = 1
             
         good_id = np.where(Rvals_cover > target_corr)[0]
         if len(good_id) > 0:
             iter_recs[1,1] += good_id[0] + 1
-            # time_recs[1,1] += (good_id[0]+1) / len(Rvals_cover) * elapsed_cover
         else:
             incomplete[1,1] = 1
             
@@ -1472,14 +1401,12 @@ def test_complexity_textured():
         good_id = np.where(Rvals_optim > target_corr)[0]
         if len(good_id) > 0:
             iter_recs[0,2] += good_id[0] + 1
-            # time_recs[0,2] += (good_id[0]+1) / len(Rvals_optim) * elapsed_optim
         else:
             incomplete[0,2] = 1
             
         good_id = np.where(Rvals_cover > target_corr)[0]
         if len(good_id) > 0:
             iter_recs[1,2] += good_id[0] + 1
-            # time_recs[1,2] += (good_id[0]+1) / len(Rvals_cover) * elapsed_cover
         else:
             incomplete[1,2] = 1
             
@@ -1492,14 +1419,12 @@ def test_complexity_textured():
         good_id = np.where(Rvals_optim > target_corr)[0]
         if len(good_id) > 0:
             iter_recs[0,3] += good_id[0] + 1
-            # time_recs[0,3] += (good_id[0]+1) / len(Rvals_optim) * elapsed_optim
         else:
             incomplete[0,3] = 1
             
         good_id = np.where(Rvals_cover > target_corr)[0]
         if len(good_id) > 0:
             iter_recs[1,3] += good_id[0] + 1
-            # time_recs[1,3] += (good_id[0]+1) / len(Rvals_cover) * elapsed_cover
         else:
             incomplete[1,3] = 1
             

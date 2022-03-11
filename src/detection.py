@@ -6,10 +6,7 @@ import numpy as np
 import numpy.linalg as npla
 from numpy.random import default_rng
 import scipy as sp
-import scipy.io as sio
 import matplotlib.pyplot as plt
-from time import sleep
-from tqdm import tqdm
 import torch
 from torch import tensor
 from registration_pt import device, precision
@@ -59,7 +56,7 @@ def bfsw_detector_pt(Y, X, mask, image_type='textured', sigma=3,
 
     Outputs:
     ------------
-    TODO. spike map, coord map, errors map, transformation map
+    spike map, coord map, errors map, transformation map
 
     """
 
@@ -109,15 +106,11 @@ def bfsw_detector_pt(Y, X, mask, image_type='textured', sigma=3,
         # Textured motif call: two rounds of multiscale
         phi, b, errors0 = reg_l2_rigid(Y, X, mask, locs, step=step,
                 max_iter=max_iter, sigma=sigma, sigma_scene=sigma_scene)
-        ## Second round multiscale
-        #phi, b, errors1 = reg_l2_rigid(Y, X, mask, locs, step=step,
-        #        max_iter=512, sigma=1, sigma_scene=0.7, init_data=(phi, b))
-        # Third round multiscale
+        # Second round multiscale
         phi, b, errors2 = reg_l2_rigid(Y, X, mask, locs, step=step,
                 max_iter=256, sigma=0.1, sigma_scene=1e-6, init_data=(phi, b),
                 erode=False)
         # Concatenate errors
-        #errors = torch.cat((errors0, errors1, errors2), -1)
         errors = torch.cat((errors0, errors2), -1)
     else:
         # spike motif call: don't need multiscale
@@ -136,9 +129,6 @@ def bfsw_detector_pt(Y, X, mask, image_type='textured', sigma=3,
     for idx in range(spike_locs.shape[0]):
         weight = torch.exp(-nu * torch.maximum(torch.zeros((1,), device=dev,
             dtype=precision()), errors[idx, -1] - thresh))
-        #spike_map = torch.maximum(spike_map, weight * gaussian_filter_2d_pt(M,
-        #    N, sigma_u=0.5, offset_u=spike_locs[idx,0],
-        #    offset_v=spike_locs[idx,1]))
         spike_map = torch.maximum(spike_map, weight * gaussian_cov(M,
             N=N, Sigma=0.5**2*torch.eye(2,device=dev,dtype=precision()),
             offset_u=spike_locs[idx,0], offset_v=spike_locs[idx,1]))

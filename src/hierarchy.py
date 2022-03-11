@@ -13,11 +13,8 @@ import numpy as np
 import numpy.linalg as npla
 from numpy.random import default_rng
 import scipy as sp
-import scipy.io as sio
 import matplotlib.pyplot as plt
-from time import sleep
 import networkx as nx
-import dill
 import torch
 from torch import tensor
 from registration_pt import device, precision
@@ -62,8 +59,8 @@ def extract_hierarchical(G, cal_list=None, suppression_amt=1/20):
     -----------
     none; outputs are written directly to the input graph G.
     Modified fields in the graph G:
-        TODO. Spike map for each edge; feature map for each node; relevant
-        param dicts to each edge (registration?) / whole graph (striding?);
+        Spike map for each edge; feature map for each node; relevant
+        param dicts to each edge (registration) / whole graph (striding);
         error maps / transformation maps for each stride pt (per-edge)
 
     """
@@ -157,13 +154,6 @@ def extract_hierarchical(G, cal_list=None, suppression_amt=1/20):
             print(f'Motif {motif} extraction complete.')
             print(f'Spike map norm (want 1): {torch.sum(spikes**2)**(0.5)}')
 
-            #breakpoint()
-
-    ## Save the calibrated graph
-    #print('Extraction finished. Saving graph at ' + G.graph['cache_fn'])
-    #with open(G.graph['cache_fn'], 'wb') as fp:
-    #    dill.dump(G, fp)
-
     return True
 
 def detect_hierarchical(Y, G, motif_list=None):
@@ -234,13 +224,6 @@ def detect_hierarchical(Y, G, motif_list=None):
 
             # Get params
             param_dict = G.nodes[motif]['params'].copy()
-            #param_dict['stride_u'] = 16
-            #param_dict['stride_v'] = 16
-            #param_dict['max_iter'] = 2048
-            #if not is_leaf:
-                #param_dict['nu'] = 1e3
-                #param_dict['thresh'] = 1e-4
-                # needs to be about 1e2 for the output layer...
 
             # Perform strided detection
             spikes, output = bfsw_detector_pt(scene, X, mask, **param_dict)
@@ -255,9 +238,6 @@ def detect_hierarchical(Y, G, motif_list=None):
 
             print(f'Motif {motif} detection complete.')
             print(f'Spike map norm (want 1): {torch.sum(spikes**2)**(0.5)}')
-
-            #if not is_leaf:
-            #    breakpoint()
 
     return spikes
 
@@ -392,8 +372,6 @@ def view_graph(G, key='content'):
 
     See e.g. crab.py for basic structure info    
 
-    TODO: Add smoothing for easy spike map visualization?
-    TODO: Add a fmt string input for plotting certain params? (step/nu)
     
     Inputs:
     -----------

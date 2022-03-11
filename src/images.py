@@ -12,9 +12,7 @@ import numpy as np
 import numpy.linalg as npla
 from numpy.random import default_rng
 import scipy as sp
-import scipy.io as sio
 import matplotlib.pyplot as plt
-import time
 import torch
 from torch import tensor
 from registration_pt import device, precision
@@ -30,9 +28,7 @@ def imagesc(X, ax=None):
     - interpolation='none' (raw pixels)
 
     """
-    # - origin='lower' (flip the vertical axis when plotting, like cartesian
-    # grid)
-    
+
     img = torch.moveaxis(X, 0, -1).detach().to('cpu').numpy()
     if ax is None:
         fig = plt.figure()
@@ -42,10 +38,6 @@ def imagesc(X, ax=None):
     else:
         ax.imshow(img, cmap='gray', vmin=X.min(), vmax=X.max(),
                 interpolation='none')
-
-    # pos = plt.imshow(X, cmap='gray', vmin=X.min(), vmax=X.max(),
-    #         interpolation='none', origin='lower')
-    #fig.colorbar(pos)
 
 def show_false_color(X_in,normalize=False, ax=None, invert_color=False, return_img=False):
     """Plot a false color image of multichannel input image X
@@ -112,11 +104,6 @@ def gaussian_filter_1d_pt(N, sigma=1, offset=0):
     """
 
     i = torch.arange(0, N, device=device(), dtype=precision())
-
-    #g = 1/torch.sqrt(2*torch.tensor((np.pi,), device=device(),
-    #    dtype=precision())*sigma**2) * torch.exp(-((i - offset + (N-1)/2) % N -
-    #    (N-1)/2)**2 / 2/ sigma**2)
-    #return g / torch.sum(g)
 
     g = torch.exp(-((i - offset + (N-1)/2) % N - (N-1)/2)**2 / 2/ sigma**2)
     return g / torch.sum(g**2)**(0.5)
@@ -198,10 +185,6 @@ def gaussian_cov_adaptive(A, M=10, sigma=10, sigma0=1, N=None):
     NOTE: Really requires M and N to be appropriately large given sigma (no
     extra normalization is introduced past the definition of the pdf)
 
-    TODO: This is probably going to lead to very wasteful inversion calls when
-    using the inverse parameterization. May want to come back and audit/update
-    after code is written and proved in
-
     """
 
     if N is None:
@@ -251,11 +234,6 @@ def gaussian_cov_adaptive_xy(A, M=10, sigma=10, sigma0=1, N=None):
 
     NOTE: Really requires M and N to be appropriately large given sigma (no
     extra normalization is introduced past the definition of the pdf)
-
-    TODO: This is probably going to lead to very wasteful inversion calls when
-    using the inverse parameterization. May want to come back and audit/update
-    after code is written and proved in
-
     """
 
     if N is None:
@@ -291,12 +269,6 @@ def gaussian_cov_adaptive_xy(A, M=10, sigma=10, sigma0=1, N=None):
 def gaussian_cov_adaptive_dot(A, V, sigma=10, sigma0=1):
     """gaussian filter MxN and covariance generated from 2x2 A w/compensation
 
-    TODO: Right now splitting this from gaussian_cov_adaptive for an
-    easy/abstracted call structure, but the abstraction is not very good. should
-    probably just inline everything in registration (?) as this would save
-    probably factor of 2 runtime (and make it easier to optimize later for
-    inverse paramterization savings?)
-
     Runs in batch mode (pass A as B x 2 x 2 tensor). Could feasibly support
     multi-sigma batch mode but not implementing this for now.
 
@@ -315,10 +287,6 @@ def gaussian_cov_adaptive_dot(A, V, sigma=10, sigma0=1):
 
     NOTE: Really requires M and N to be appropriately large given sigma (no
     extra normalization is introduced past the definition of the pdf)
-
-    TODO: This is probably going to lead to very wasteful inversion calls when
-    using the inverse parameterization. May want to come back and audit/update
-    after code is written and proved in
 
     """
 
@@ -368,12 +336,6 @@ def gaussian_cov_adaptive_dot(A, V, sigma=10, sigma0=1):
 def gaussian_cov_adaptive_dot_xy(A, V, sigma=10, sigma0=1):
     """gaussian filter MxN and covariance generated from 2x2 A w/compensation
 
-    TODO: Right now splitting this from gaussian_cov_adaptive for an
-    easy/abstracted call structure, but the abstraction is not very good. should
-    probably just inline everything in registration (?) as this would save
-    probably factor of 2 runtime (and make it easier to optimize later for
-    inverse paramterization savings?)
-
     Runs in batch mode (pass A as B x 2 x 2 tensor). Could feasibly support
     multi-sigma batch mode but not implementing this for now.
 
@@ -392,10 +354,6 @@ def gaussian_cov_adaptive_dot_xy(A, V, sigma=10, sigma0=1):
 
     NOTE: Really requires M and N to be appropriately large given sigma (no
     extra normalization is introduced past the definition of the pdf)
-
-    TODO: This is probably going to lead to very wasteful inversion calls when
-    using the inverse parameterization. May want to come back and audit/update
-    after code is written and proved in
 
     """
 
@@ -592,7 +550,7 @@ def get_affine_grid_from_basis_xy(A, b, basis_u, basis_v, basis_shift,
 
     """
 
-    # TODO: Could be faster to do this with a BMM operation (kronecker style)
+    # Could be faster to do this with a BMM operation (kronecker style)
     # plus reshaping... maybe not though (lots of size-2 vector dot products)
     tau_pt = (torch.cat((A[:,0,1,None,None] * basis_u + A[:,0,0,None,None] *
         basis_v, A[:,1,1,None,None] * basis_u + A[:,1,0,None,None] * basis_v),

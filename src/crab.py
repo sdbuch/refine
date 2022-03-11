@@ -10,9 +10,7 @@ import numpy as np
 import numpy.linalg as npla
 from numpy.random import default_rng
 import scipy as sp
-import scipy.io as sio
 import matplotlib.pyplot as plt
-from time import sleep
 import torch
 from torch import tensor
 from registration_pt import device, precision
