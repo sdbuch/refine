@@ -18,6 +18,8 @@ The repository is organized as follows:
 
 ### Requirements
 
+PyTorch code has been tested on PyTorch 1.8.1 and CUDA 10.1.
+
 ### Formulation descriptions
 
 Below, we reference formula numbers in v1 of the arXiv preprint of the paper.

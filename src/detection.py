@@ -129,9 +129,15 @@ def bfsw_detector_pt(Y, X, mask, image_type='textured', sigma=3,
     for idx in range(spike_locs.shape[0]):
         weight = torch.exp(-nu * torch.maximum(torch.zeros((1,), device=dev,
             dtype=precision()), errors[idx, -1] - thresh))
-        spike_map = torch.maximum(spike_map, weight * gaussian_cov(M,
-            N=N, Sigma=0.5**2*torch.eye(2,device=dev,dtype=precision()),
-            offset_u=spike_locs[idx,0], offset_v=spike_locs[idx,1]))
+        #spike_map = torch.maximum(spike_map, weight * gaussian_cov(M,
+        #    N=N, Sigma=0.5**2*torch.eye(2,device=dev,dtype=precision()),
+        #    offset_u=spike_locs[idx,0], offset_v=spike_locs[idx,1]))
+        # This one has boundary issues, but previous one does too unless we
+        # pad...
+        # This one gets normalized as well.
+        spike_map = torch.maximum(spike_map, weight * gaussian_filter_2d_pt(M,
+            N, sigma_u=0.5, offset_u=spike_locs[idx,0],
+            offset_v=spike_locs[idx,1]))
 
     # 4. Prepare the output struct (need spike map and transformation
     #   parameters, errors for debug). 

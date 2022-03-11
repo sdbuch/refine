@@ -293,6 +293,8 @@ def reg_l2_rigid(Y_scene, X, mask, locs, sigma=3, sigma_scene=1.5,
         b = b[accept_idxs, ...]
         tau_pt = tau_pt[accept_idxs, ...]
         basis_shift = basis_shift[accept_idxs, ...]
+        basis_u = basis_u[accept_idxs, ...]
+        basis_v = basis_v[accept_idxs, ...]
 
     # Prepare errors tensor and cost
     error = float('inf') * torch.ones( (batch_sz, max_iter), device=dev,
