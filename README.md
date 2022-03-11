@@ -18,7 +18,14 @@ The repository is organized as follows:
 
 ### Requirements
 
-PyTorch code has been tested on PyTorch 1.8.1 and CUDA 10.1.
+An `environment.yml` is provided -- PyTorch code has been tested on PyTorch
+1.8.1 and CUDA 10.1, and the environment file reflects this. For other setup
+methods, the only packages necessary are:
+- NetworkX
+- Numpy
+- Scipy
+- PyTorch
+- Matplotlib
 
 ### Formulation descriptions
 
