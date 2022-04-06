@@ -450,6 +450,26 @@ def mask_to_bbox_pt(mask, thresh=0):
 
     return bb_left, bb_right+1, bb_top, bb_bot+1
 
+def get_affine_grid_from_basis_xy(A, b, basis_u, basis_v, basis_shift,
+        shift_scale):
+    """Create a grid from grid bases, using provided matrices A, b (x,y coord)
+
+    This function outputs and inputs with (x, y) coordinates rather than (u, v)
+    coordinates, to be compatible with grid_sample. 
+    To convert a (u,v) A matrix to an (x,y) A matrix, swap the diagonal elements
+    and off-diagonal elements.
+
+
+    """
+
+    # Could be faster to do this with a BMM operation (kronecker style)
+    # plus reshaping... maybe not though (lots of size-2 vector dot products)
+    tau_pt = (torch.cat((A[:,0,1,None,None] * basis_u + A[:,0,0,None,None] *
+        basis_v, A[:,1,1,None,None] * basis_u + A[:,1,0,None,None] * basis_v),
+        axis=-1) + basis_shift + b[:, None, None, :])
+
+    return tau_pt * shift_scale[:, None, None, :]
+
 def get_affine_grid_basis(M, N, extent_M, extent_N, locs=None, ctrs=None):
     """Get a matrix basis for a grid to use with pytorch grid_sample
 
@@ -508,13 +528,13 @@ def get_affine_grid_basis(M, N, extent_M, extent_N, locs=None, ctrs=None):
     m_vec = m_vec[None, ...] + locs[:, 0][:, None] - ctrs[:, 0][:,None]
     n_vec = torch.arange(extent_N, device=dev, dtype=precision())
     n_vec = n_vec[None, ...] + locs[:, 1][:, None] - ctrs[:, 1][:,None]
-    tau_basis_u = 2/(M-1) * torch.einsum('abc,cd -> abd', m_vec[...,None],
+    tau_basis_u = torch.einsum('abc,cd -> abd', m_vec[...,None],
             torch.ones((1,extent_N),device=dev, dtype=precision()))[..., None]
-    tau_basis_v = 2/(N-1) * torch.einsum('abc,cd -> adb', n_vec[...,None],
+    tau_basis_v = torch.einsum('abc,cd -> adb', n_vec[...,None],
             torch.ones((1,extent_M),device=dev, dtype=precision()))[..., None]
     image_ctr = torch.tensor((((M-1)/2, (N-1)/2),), device=dev,
                 dtype=precision())
-    tau_basis_shift = ((ctrs - image_ctr) / image_ctr)[:, None, None, :]
+    tau_basis_shift = ((ctrs - image_ctr))[:, None, None, :]
     tau_basis_shift = torch.flip(tau_basis_shift, (-1,))
     tau_basis_scale = 1/image_ctr
     tau_basis_scale = torch.flip(tau_basis_scale, (-1,))
@@ -534,34 +554,14 @@ def get_affine_grid_from_basis(A, b, basis_u, basis_v, basis_shift,
 
     tau_pt = (torch.cat((A[:,1,0,None,None] * basis_u + A[:,1,1,None,None] *
         basis_v, A[:,0,0,None,None] * basis_u + A[:,0,1,None,None] * basis_v),
-        axis=-1) + basis_shift + (b * shift_scale)[:, None, None, :])
+        axis=-1) + basis_shift + b[:, None, None, :])
 
-    return tau_pt
-
-def get_affine_grid_from_basis_xy(A, b, basis_u, basis_v, basis_shift,
-        shift_scale):
-    """Create a grid from grid bases, using provided matrices A, b (x,y coord)
-
-    This function outputs and inputs with (x, y) coordinates rather than (u, v)
-    coordinates, to be compatible with grid_sample. 
-    To convert a (u,v) A matrix to an (x,y) A matrix, swap the diagonal elements
-    and off-diagonal elements.
-
-
-    """
-
-    # Could be faster to do this with a BMM operation (kronecker style)
-    # plus reshaping... maybe not though (lots of size-2 vector dot products)
-    tau_pt = (torch.cat((A[:,0,1,None,None] * basis_u + A[:,0,0,None,None] *
-        basis_v, A[:,1,1,None,None] * basis_u + A[:,1,0,None,None] * basis_v),
-        axis=-1) + basis_shift + (b * shift_scale)[:, None, None, :])
-
-    return tau_pt
+    return tau_pt * shift_scale[:, None, None, :]
 
 def get_affine_grid(A, b, M, N, extent_M, extent_N, locs=None, ctrs=None):
     """Create grid for affine transform. Wrapper for convenience"""
 
-    basis_u, basis_v, basis_shift, shift_scale = get_affine_grid_basis(M, N,
-            extent_M, extent_N, locs=locs, ctrs=ctrs)
+    basis_u, basis_v, basis_shift, shift_scale = get_affine_grid_basis(M,
+            N, extent_M, extent_N, locs=locs, ctrs=ctrs)
     return get_affine_grid_from_basis(A, b, basis_u, basis_v, basis_shift,
             shift_scale)
