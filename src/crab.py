@@ -15,7 +15,7 @@ import torch
 from torch import tensor
 from registration_pt import device, precision
 
-def crab():
+def crab(prefix=""):
     """Load the black-background crab motif
     
     optional argument side says to load either the left claw or the right claw
@@ -25,7 +25,7 @@ def crab():
 
     from matplotlib.image import imread
 
-    crab = imread('../data/crab.png')
+    crab = imread(prefix + '/crab.png')
 
     crab =  crab.astype('float64')
 
@@ -39,7 +39,7 @@ def crab():
 
     return motif, mask
 
-def claw(side="left"):
+def claw(prefix="", side="left"):
     """Load the black-background crab claw motif
     
     optional argument side says to load either the left claw or the right claw
@@ -50,9 +50,9 @@ def claw(side="left"):
     from matplotlib.image import imread
 
     if side == "left":
-        claw = imread('../data/left_claw.png')
+        claw = imread(prefix + '/left_claw.png')
     else:
-        claw = imread('../data/right_claw.png')
+        claw = imread(prefix + '/right_claw.png')
 
     claw =  claw.astype('float64')
 
@@ -66,7 +66,7 @@ def claw(side="left"):
 
     return motif, mask
 
-def eye(side="left"):
+def eye(prefix="", side="left"):
     """Load the black-background crab eye motif
     
     optional argument side says to load either the left eye or the right eye
@@ -77,9 +77,9 @@ def eye(side="left"):
     from matplotlib.image import imread
 
     if side == "left":
-        eye = imread('../data/left_eye.png')
+        eye = imread(prefix + '/left_eye.png')
     else:
-        eye = imread('../data/right_eye.png')
+        eye = imread(prefix + '/right_eye.png')
 
     eye =  eye.astype('float64')
 
@@ -93,28 +93,7 @@ def eye(side="left"):
 
     return motif, mask
 
-def eye_pair():
-    """Load the black-background crab eye pair motif
-
-    """
-
-    from matplotlib.image import imread
-
-    eye_pair = imread('../data/eye_pair.png')
-
-    eye_pair =  eye_pair.astype('float64')
-
-    motif = eye_pair[...,:-1]
-    mask = eye_pair[...,-1]
-
-    dev = device()
-    motif = torch.moveaxis(tensor(motif, device=dev, dtype=precision()), -1,
-            0)
-    mask = tensor(mask, device=dev, dtype=precision())[None, ...]
-
-    return motif, mask
-
-def hierarchy():
+def hierarchy(base_path=""):
     """Returns the hierarchy graph for the crab template.
 
     Used for motif extraction / detection in motifs.py and detection.py.
@@ -125,7 +104,9 @@ def hierarchy():
 
     Inputs:
     ------------
-    none
+    base_path: str
+        Optional prefix to add to all file names. Used when calling these files
+        from another directory (e.g. a notebook in the experiments directory)
 
     Outputs:
     ----------
@@ -157,55 +138,73 @@ def hierarchy():
     # We will also set up the detection parameter dictionaries here, although
     # this could be done elsewhere.
     dev = device()
+    prec = precision()
 
     # Just use two dicts. One for textured, one for spike. (Tune later.)
     # Dict for textured eye motifs
     eye_dict = {}
     eye_dict['image_type'] = 'textured'
-    eye_dict['step'] = tensor(1e-1, device=dev, dtype=precision())
+    eye_dict['step'] = tensor(2e-4, device=dev, dtype=precision())
     eye_dict['sigma'] = 3
     eye_dict['sigma_scene'] = 1.5
-    eye_dict['max_iter'] = 1024
+    eye_dict['max_iter'] = 64
     eye_dict['stride_u'] = 20
     eye_dict['stride_v'] = 20
-    eye_dict['nu'] = 1
+    eye_dict['nu'] = 10
     # left eye
     left_eye_dict = eye_dict.copy()
-    left_eye_dict['thresh'] = 58
+    left_eye_dict['thresh'] = 10
+    left_eye_dict['articulation_pt'] = torch.tensor(((82,4),), device=dev,
+            dtype=prec)
     right_eye_dict = eye_dict.copy()
-    right_eye_dict['thresh'] = 40
+    right_eye_dict['thresh'] = 10
+    right_eye_dict['articulation_pt'] = torch.tensor(((81,4),), device=dev,
+            dtype=prec)
     # Dict for textured claw motifs
     # Needs a smaller step for some reason...
     claw_dict = eye_dict.copy()
     left_claw_dict = claw_dict.copy()
-    left_claw_dict['thresh'] = 80
+    left_claw_dict['thresh'] = 10
+    left_claw_dict['step'] /= 2
+    left_claw_dict['articulation_pt'] = center=torch.tensor(((51,38),),
+            device=dev, dtype=prec)
     right_claw_dict = claw_dict.copy()
-    right_claw_dict['thresh'] = 85
+    right_claw_dict['thresh'] = 10
+    right_claw_dict['articulation_pt'] = center=torch.tensor(((45,3),),
+            device=dev, dtype=prec)
+    # right_claw_dict['step'] /= 2
     # Dict for spike motifs
     # This one has an aggressive step size...
     spike_dict = {}
     spike_dict['image_type'] = 'spike'
-    spike_dict['step'] = tensor(2e3, device=dev, dtype=precision())
-    spike_dict['sigma'] = 10
+    spike_dict['step'] = tensor(2e-1, device=dev, dtype=precision())
+    spike_dict['sigma'] = 20
     spike_dict['sigma_scene'] = 3
-    spike_dict['max_iter'] = 1024
+    spike_dict['max_iter'] = 32
     spike_dict['stride_u'] = 20
     spike_dict['stride_v'] = 20
     spike_dict['nu'] = 2.5e5
-    spike_dict['thresh'] = 1e-4
+    spike_dict['thresh'] = 1e-5
     # Dict for top, which needs to be different...
     crab_dict = spike_dict.copy()
-    #crab_dict['max_iter'] = 30
-    #crab_dict['step'] = 5e2
-    crab_dict['thresh'] = 2e-3
+    crab_dict['max_iter'] = 32
+    #crab_dict['step'] *= 2
+    crab_dict['thresh'] = 2e-5
 
-    G = nx.DiGraph(root=root, cache_fn='../data/crab_hierarchical')
-    G.add_node(root, content=crab(), params=crab_dict.copy())
-    G.add_node(child0, content=claw(side="left"), params=left_claw_dict.copy())
-    G.add_node(child1, content=claw(side="right"), params=right_claw_dict.copy())
-    G.add_node(child2, content=eye_pair(), params=spike_dict.copy())
-    G.add_node(child3, content=eye(side="left"), params=left_eye_dict.copy())
-    G.add_node(child4, content=eye(side="right"), params=right_eye_dict.copy())
+    # TODO: Hardcode the articulation points for each motif for now.
+    # Would be better to set these in the eye() and claw() functions.
+    # Right now they're also hardcoded in the motion code (in the fig3 notebook)
+    G = nx.DiGraph(root=root, cache_fn=base_path + '/crab_hierarchical')
+    G.add_node(root, content=crab(prefix=base_path), params=crab_dict.copy())
+    G.add_node(child0, content=claw(prefix=base_path, side="left"),
+            params=left_claw_dict.copy(),)
+    G.add_node(child1, content=claw(prefix=base_path, side="right"),
+            params=right_claw_dict.copy(),)
+    G.add_node(child2, content=(np.zeros((1,1,1)),)*2, params=spike_dict.copy())
+    G.add_node(child3, content=eye(prefix=base_path, side="left"),
+            params=left_eye_dict.copy())
+    G.add_node(child4, content=eye(prefix=base_path, side="right"),
+            params=right_eye_dict.copy(),)
     # Next: edges
     # Top-down starting from motif...
     # Edges don't have properties at init. Add properties to edges when

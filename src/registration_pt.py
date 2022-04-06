@@ -17,6 +17,7 @@ import scipy as sp
 import matplotlib.pyplot as plt
 import torch
 from torch import tensor
+from pdb import set_trace
 
 def device():
     """Helper function to get a relevant device string (cpu or gpu) w/ pytorch
@@ -177,26 +178,29 @@ def reg_l2_rigid(Y_scene, X, mask, locs, sigma=3, sigma_scene=1.5,
     #   after copying
     chunk_sz = 2**int(np.floor(29 - np.log2(C * M * N)))
     chunk_sz = min(chunk_sz, batch_sz)
+    pi = torch.tensor(np.pi,device=dev,dtype=precision())
 
     # Filters setup
     if image_type == 'textured':
-        G_scene_tail = int(np.ceil(3*sigma_scene))
+        tail_factor = 3
+        G_scene_tail = int(np.ceil(tail_factor*sigma_scene))
         G_scene = fftshift(gaussian_filter_2d(2*G_scene_tail +1,
           N=2*G_scene_tail+1, sigma_u=sigma_scene))
         G_scene_pt = torch.tile(tensor(G_scene[None, ...], device=dev), (C, 1,
             1))[:, None, ...]
-        G_tail = int(np.ceil(3*sigma))
+        G_tail = int(np.ceil(tail_factor*sigma))
         G = fftshift(gaussian_filter_2d(2*G_tail +1, N=2*G_tail+1, sigma_u=sigma))
         G_pt = torch.tile(tensor(G[None, ...], device=dev), (C, 1, 1))[:, None, ...]
     else:
-        G_scene_tail = int(np.ceil(3*sigma_scene))
+        tail_factor = 2
+        G_scene_tail = int(np.ceil(tail_factor*sigma_scene))
         G_scene = fftshift(gaussian_filter_2d(2*G_scene_tail +1,
           N=2*G_scene_tail+1, sigma_u=sigma_scene))
         G_scene_pt = torch.tile(tensor(G_scene[None, ...], device=dev), (C, 1,
             1))[:, None, ...]
         # Complementary smoothing approach
         sigma_compl = np.sqrt(sigma**2 - sigma_scene**2)
-        G_tail = int(np.ceil(3*sigma_compl))
+        G_tail = int(np.ceil(tail_factor*sigma_compl))
         G = fftshift(gaussian_filter_2d(2*G_tail +1, N=2*G_tail+1,
             sigma_u=sigma_compl))
         G_pt = torch.tile(tensor(G[None, ...], device=dev), (C, 1, 1))[:, None, ...]
@@ -232,7 +236,8 @@ def reg_l2_rigid(Y_scene, X, mask, locs, sigma=3, sigma_scene=1.5,
         tau_pt = (torch.cat((sinphi[...,None,None] * basis_u +
             cosphi[...,None,None] * basis_v, cosphi[...,None,None] *
             basis_u + -sinphi[...,None,None] * basis_v), axis=-1) +
-            basis_shift + (b * shift_scale)[:, None, None, :])
+            basis_shift + b[:, None, None, :])
+        tau_pt *= shift_scale[:, None, None, :]
     else:
         # passthrough initialization
         phi = init_data[0]
@@ -242,10 +247,9 @@ def reg_l2_rigid(Y_scene, X, mask, locs, sigma=3, sigma_scene=1.5,
         tau_pt = (torch.cat((sinphi[...,None,None] * basis_u +
             cosphi[...,None,None] * basis_v, cosphi[...,None,None] *
             basis_u + -sinphi[...,None,None] * basis_v), axis=-1) +
-            basis_shift + (b * shift_scale)[:, None, None, :])
+            basis_shift + b[:, None, None, :])
+        tau_pt *= shift_scale[:, None, None, :]
 
-    # TODO: This is a bug, fix this... See the scheme in reg_l2_spike for the
-    # fix
     if image_type == 'textured':
         # Perform scene smoothing
         Y = conv2d(Y_scene[None, ...], G_scene_pt, padding=G_scene_tail, groups=C)
@@ -302,9 +306,10 @@ def reg_l2_rigid(Y_scene, X, mask, locs, sigma=3, sigma_scene=1.5,
 
     # Prepare preconditioner
     motif_rad = np.max((roi_u/2, roi_v/2))
-    A_scale = torch.tensor(motif_rad**2 / sigma, device=dev,
+    scale_const = 8*pi*np.maximum(sigma, 1)**4
+    A_scale = torch.tensor(motif_rad**2 / scale_const, device=dev,
             dtype=precision())
-    b_scale = torch.tensor(motif_rad / sigma, device=dev, dtype=precision())
+    b_scale = torch.tensor(1 / scale_const, device=dev, dtype=precision())
 
     # Main loop!
     # Get differentiable object ... maybe need to rewrite this downstream
@@ -327,13 +332,10 @@ def reg_l2_rigid(Y_scene, X, mask, locs, sigma=3, sigma_scene=1.5,
         tau_dots_vsums = torch.sum(tau_dots, axis=(2,))
         tau_dots_usums = torch.sum(tau_dots, axis=(1,))
         # Contract
-        # TODO: If the apparently Y_scene issue above is fixed, these need to be
-        # fixed too (they should just use shift_scale instead of hard-coded
-        # scales?)
-        m_contractions = torch.einsum('abc,b -> ac', tau_dots_vsums,
-                2/(M-1)*m_vec)
-        n_contractions = torch.einsum('abc,b -> ac', tau_dots_usums,
-                2/(N-1)*n_vec)
+        m_contractions = shift_scale * torch.einsum('abc,b -> ac',
+                tau_dots_vsums, m_vec)
+        n_contractions = shift_scale * torch.einsum('abc,b -> ac',
+                tau_dots_usums, n_vec)
         # Combine with phi weights for phi grad
         combo_weights = torch.cat((cosphi, -1 * sinphi, -1 * sinphi, -1 * cosphi), dim=-1)
         grad_phi = torch.sum( torch.cat((m_contractions, n_contractions),
@@ -351,7 +353,8 @@ def reg_l2_rigid(Y_scene, X, mask, locs, sigma=3, sigma_scene=1.5,
         tau_pt = (torch.cat((sinphi[...,None,None] * basis_u +
             cosphi[...,None,None] * basis_v, cosphi[...,None,None] *
             basis_u + -sinphi[...,None,None] * basis_v), axis=-1) +
-            basis_shift + (b * shift_scale)[:, None, None, :])
+            basis_shift + b[:, None, None, :])
+        tau_pt *= shift_scale[:, None, None, :]
 
     # Compute cost for last loop iteration
     cur_Y = resample_chunked(Y, tau_pt, chunk_sz)
@@ -623,14 +626,13 @@ def reg_l2_spike(Y_scene, X, locs, ctrs=None, sigma=10, sigma0=2,
         tau_dots_vsums = torch.sum(tau_dots, axis=(2,))
         tau_dots_usums = torch.sum(tau_dots, axis=(1,))
         # Contract
-        m_contractions = torch.einsum('abc,b -> ac', tau_dots_vsums,
-                shift_scale[0,1]*m_vec)
-        n_contractions = torch.einsum('abc,b -> ac', tau_dots_usums,
-                shift_scale[0,0]*n_vec)
+        m_contractions = torch.einsum('abc,b -> ac', tau_dots_vsums, m_vec)
+        n_contractions = torch.einsum('abc,b -> ac', tau_dots_usums, n_vec)
         # Assemble into A gradient
         grad_A_tau = torch.cat((
             n_contractions[..., None],
             m_contractions[..., None]), -1)
+        grad_A_tau *= shift_scale[:, :, None]
         # b grad
         grad_b = torch.sum(tau_dots_usums, axis=(1,)) * shift_scale
         # Create gradient-wrt-filter term
@@ -708,6 +710,16 @@ def reg_l2_spike(Y_scene, X, locs, ctrs=None, sigma=10, sigma0=2,
                     torch.sqrt(torch.sum(cur_Y_ctr[0]**2) * torch.sum(X**2))
 
     # Cleanup: last-iter operations
+    AAt = torch.bmm(A, torch.transpose(A,-1,-2))
+    Sigma = (sigma**2 * Id[None,...].expand(batch_sz,2,2) - sigma0**2 * AAt)
+    Sigmainv = torch.linalg.inv(Sigma)
+    # Creating filter 
+    exponent = -0.5 * (torch.sum(torch.bmm(Sigmainv,
+        grid.T[None,...].expand(batch_sz,-1,-1)) * grid.T[None,...], dim=-2) +
+        torch.logdet(Sigma)[...,None])
+    G_adap = torch.transpose(0.5/pi * torch.exp(torch.reshape(exponent,
+        (batch_sz, 2*G_tail+1, 2*G_tail+1))) /
+        torch.sqrt(torch.det(AAt))[:,None,None], -1, -2)
     cur_Y = resample_chunked(Y, tau_pt, chunk_sz)
     y_conv = conv2d(cur_Y.detach(), G_adap[None,...].expand(C,-1,-1,-1),
             padding=G_tail, groups=C)

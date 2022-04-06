@@ -18,6 +18,7 @@ import networkx as nx
 import torch
 from torch import tensor
 from registration_pt import device, precision
+from pdb import set_trace
 
 def extract_hierarchical(G, cal_list=None, suppression_amt=1/20):
     """Calibrate extraction parameters while extracting motifs from hierarchy G
@@ -117,14 +118,14 @@ def extract_hierarchical(G, cal_list=None, suppression_amt=1/20):
                 pad_u = 0
                 pad_v = 0
                 # Padding for minimum size
-                if bb_b - bb_t < max_u:
-                    pad_u = (max_u - (bb_b - bb_t))
-                if bb_r - bb_l < max_v:
-                    pad_v = (max_v - (bb_r - bb_l))
-                if pad_u % 2 == 1:
-                    pad_u = pad_u - 1
-                if pad_v % 2 == 1:
-                    pad_v = pad_v - 1
+                # if bb_b - bb_t < max_u:
+                #     pad_u = (max_u - (bb_b - bb_t))
+                # if bb_r - bb_l < max_v:
+                #     pad_v = (max_v - (bb_r - bb_l))
+                # if pad_u % 2 == 1:
+                #     pad_u = pad_u - 1
+                # if pad_v % 2 == 1:
+                #     pad_v = pad_v - 1
                 bb_t = bb_t - pad_u // 2
                 bb_b = bb_b + pad_u // 2
                 bb_l = bb_l - pad_v // 2
@@ -136,13 +137,16 @@ def extract_hierarchical(G, cal_list=None, suppression_amt=1/20):
                 X = G.nodes[motif]['occ_map']
                 scene = occ_map
                 mask = None
+                # Write it to the graph as this node's content too
+                G.nodes[motif]['content'] = (X.clone().detach(), None)
 
             # run detections with calibrated parameters
             param_dict = G.nodes[motif]['params']
             print(f'Extracting motif {motif} with calibrated params.')
             spikes, output = bfsw_detector_pt(scene, X, mask, **param_dict)
 
-            #breakpoint()
+            #if not is_leaf:
+            # set_trace()
 
             # Clean up
             G.nodes[motif]['extraction_dict'] = output
@@ -152,9 +156,9 @@ def extract_hierarchical(G, cal_list=None, suppression_amt=1/20):
                 G[parent][motif]['occurrence'] = torch.clone(spikes.detach())
 
             print(f'Motif {motif} extraction complete.')
-            print(f'Spike map norm (want 1): {torch.sum(spikes**2)**(0.5)}')
+            print(f'Spike map norm (want 1): {torch.sum(spikes)}')
 
-    return True
+    return torch.clone(spikes.detach())
 
 def detect_hierarchical(Y, G, motif_list=None):
     """Detect a hierarchically-structured object in the scene Y.
@@ -228,6 +232,9 @@ def detect_hierarchical(Y, G, motif_list=None):
             # Perform strided detection
             spikes, output = bfsw_detector_pt(scene, X, mask, **param_dict)
 
+            # if not is_leaf:
+            #     set_trace()
+
 
             # Clean up
             G.nodes[motif]['detection_dict'] = output
@@ -237,7 +244,10 @@ def detect_hierarchical(Y, G, motif_list=None):
                 G[parent][motif]['occurrence'] = torch.clone(spikes.detach())
 
             print(f'Motif {motif} detection complete.')
-            print(f'Spike map norm (want 1): {torch.sum(spikes**2)**(0.5)}')
+            print(f'Spike map norm (want 1): {torch.sum(spikes)}')
+            # if not is_leaf:
+            #     print('Sorted final errors:')
+            #     print(np.sort(output['errors'][:,-1].to('cpu').numpy()))
 
     return spikes
 

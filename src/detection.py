@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import torch
 from torch import tensor
 from registration_pt import device, precision
+from pdb import set_trace
 
 """Code for invariant object detection routines.
 
@@ -22,7 +23,8 @@ To be called externally.
 
 def bfsw_detector_pt(Y, X, mask, image_type='textured', sigma=3,
         sigma_scene=1.5, nu=1, stride_u=16, stride_v=16, max_iter=1024,
-        thresh=0, step=tensor(1e0, device=device(), dtype=precision())):
+        thresh=0, step=tensor(1e0, device=device(), dtype=precision()),
+        articulation_pt=None):
     """Brute Force Sliding Window optimization-based detector
 
     Search for a motif X in a scene Y by "brute force": given striding
@@ -66,9 +68,16 @@ def bfsw_detector_pt(Y, X, mask, image_type='textured', sigma=3,
 
     # Overhead
     dev = device()
+    prec = precision()
+    rot_mtx_T = lambda phi: torch.stack((
+        torch.stack((torch.cos(phi),torch.sin(phi))),
+        torch.stack((-torch.sin(phi),torch.cos(phi)))
+        ))
+        #torch.tensor(((torch.cos(phi),
+        #-torch.sin(phi)),(torch.sin(phi), torch.cos(phi))), device=dev,
+        #dtype=prec)
 
     # Main tasks:
-
     C, M, N = Y.shape
     c, m, n = X.shape
 
@@ -108,7 +117,7 @@ def bfsw_detector_pt(Y, X, mask, image_type='textured', sigma=3,
                 max_iter=max_iter, sigma=sigma, sigma_scene=sigma_scene)
         # Second round multiscale
         phi, b, errors2 = reg_l2_rigid(Y, X, mask, locs, step=step,
-                max_iter=256, sigma=0.1, sigma_scene=1e-6, init_data=(phi, b),
+                max_iter=max_iter, sigma=0.1, sigma_scene=1e-6, init_data=(phi, b),
                 erode=False)
         # Concatenate errors
         errors = torch.cat((errors0, errors2), -1)
@@ -116,12 +125,21 @@ def bfsw_detector_pt(Y, X, mask, image_type='textured', sigma=3,
         # spike motif call: don't need multiscale
         phi, b, errors = reg_l2_rigid(Y, X, mask, locs, step=step,
                 max_iter=max_iter, sigma=sigma, sigma_scene=sigma_scene,
-                image_type='spike', rejection_thresh=0.2)
+                image_type='spike', rejection_thresh=0.25)
 
     # 3. Create the spike map (do this on the GPU)
     ctr = torch.tensor(((m-1)/2, (n-1)/2), device=dev,
             dtype=precision())[None, :]
-    spike_locs = torch.min(torch.max(ctr + locs + torch.flip(b, (-1,)),
+    if articulation_pt is None:
+        articulation_pt = ctr
+    Q = rot_mtx_T(phi[:, 0])
+    affine_part = torch.tensordot(articulation_pt - ctr, Q, dims=1)[0, ...].T
+    #spike_locs = torch.min(torch.max(
+    #    ctr + locs + torch.flip(b, (-1,)),
+    #    torch.tensor((0,0),device=dev,dtype=precision())),
+    #    torch.tensor((M,N),device=dev,dtype=precision()))
+    spike_locs = torch.min(torch.max(
+        affine_part + ctr + locs + torch.flip(b, (-1,)),
         torch.tensor((0,0),device=dev,dtype=precision())),
         torch.tensor((M,N),device=dev,dtype=precision()))
     
@@ -129,15 +147,10 @@ def bfsw_detector_pt(Y, X, mask, image_type='textured', sigma=3,
     for idx in range(spike_locs.shape[0]):
         weight = torch.exp(-nu * torch.maximum(torch.zeros((1,), device=dev,
             dtype=precision()), errors[idx, -1] - thresh))
-        #spike_map = torch.maximum(spike_map, weight * gaussian_cov(M,
-        #    N=N, Sigma=0.5**2*torch.eye(2,device=dev,dtype=precision()),
-        #    offset_u=spike_locs[idx,0], offset_v=spike_locs[idx,1]))
-        # This one has boundary issues, but previous one does too unless we
-        # pad...
-        # This one gets normalized as well.
-        spike_map = torch.maximum(spike_map, weight * gaussian_filter_2d_pt(M,
-            N, sigma_u=0.5, offset_u=spike_locs[idx,0],
-            offset_v=spike_locs[idx,1]))
+        spike_interp = gaussian_filter_2d_pt(M, N, sigma_u=0.5,
+                offset_u=spike_locs[idx,0], offset_v=spike_locs[idx,1])
+        spike_map = torch.maximum(spike_map, weight * spike_interp /
+                torch.sum(spike_interp))
 
     # 4. Prepare the output struct (need spike map and transformation
     #   parameters, errors for debug). 
